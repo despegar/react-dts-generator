@@ -46,5 +46,13 @@ declare module "react-docgen" {
 		type: Type;
 	}
 
-	export function parse(content: string): ComponentInfo;
+	interface resolver {
+		findAllComponentDefinitions: any;
+		findExportedComponentDefinition: any;
+		findAllExportedComponentDefinitions: any;
+	}
+
+	export const resolver: resolver;
+
+	export function parse(content: string, resolver?: resolver): ComponentInfo | ComponentInfo[];
 }

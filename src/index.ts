@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as prettier from 'prettier';
-import { parse as DocParser } from 'react-docgen';
+import {ComponentInfo, parse, resolver} from 'react-docgen';
 import * as dom from './dts-dom';
 import * as Utils from './utils';
 
@@ -24,14 +24,14 @@ export interface Options {
     imports?: ImportType[];
 }
 
-export function generate(options: Options): string {
+export function generate(options: Options, findAll?: boolean): string {
     let result: string = '';
     let baseType: string = 'React.Component';
 
     const { input, output, isBaseClass, propTypesComposition, imports } = options;
 
     const content: string = fs.readFileSync(input, 'utf8');
-    const componentInfo = DocParser(content);
+    const [componentInfo, ...childs] = <ComponentInfo[]>parse(content, findAll ? resolver.findAllComponentDefinitions : undefined);
     const className = isBaseClass ? Utils.writeGeneric(componentInfo.displayName, 'T = any') : componentInfo.displayName;
 
     const importDefinitions: dom.Import[] = [];
@@ -75,6 +75,42 @@ export function generate(options: Options): string {
 
             baseType = Utils.writeGeneric('React.Component', isBaseClass ? 'T' : propsIntefaceName);
             interfaceDefinitions.push(propsDefinition);
+        }
+
+        if (childs && childs.length > 0) {
+            childs.forEach(({displayName, props}) => {
+                const propsIntefaceName2 = `${displayName}Props`;
+                const propsDefinition2 = dom.create.interface(propsIntefaceName2, dom.DeclarationFlags.Export);
+                const importDefinition2 = dom.create.importAll('React', 'react');
+                importDefinitions.push(importDefinition2);
+                if (imports && imports.length > 0) {
+                    imports.forEach(x => {
+                        importDefinitions.push(Utils.createImport(x.from, x.default, x.named));
+                    });
+                }
+                if (props) {
+                    const keys = Object.keys(props);
+                    if (keys.length > 0) {
+                        keys.forEach(key => {
+                            const prop = {...props[key], name: key};
+                            if (!prop.type) {
+                                return;
+                            }
+                            const propResult = Utils.generateProp(prop);
+                            if (propResult) {
+                                const {property, interfaces} = propResult;
+                                propsDefinition2.members.push(property);
+                                if (interfaces && interfaces.length > 0) {
+                                    interfaceDefinitions.push(...interfaces);
+                                }
+                            }
+                        });
+                    }
+                    // baseType = Utils.writeGeneric('React.Component', isBaseClass ? 'T' : propsIntefaceName);
+                    interfaceDefinitions.push(propsDefinition2);
+                    classDefinition.members.push(dom.create.property(displayName, Utils.writeGeneric('React.Component', propsIntefaceName2)));
+                }
+            })
         }
 
         if (propTypesComposition && propTypesComposition.length > 0) {
